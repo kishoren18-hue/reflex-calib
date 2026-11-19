@@ -17,6 +17,22 @@ Results go to `results/<source>/`: CSV tables, `reliability.png`, `shift_ece.png
 
 **After the first real download, check the printed line** (`objects`, `trials`, `fs_hz`). Each CSV is split into trials wherever there's a large time gap. If the trial count or sample rate looks wrong, change `gap_factor` in `reflex_calib/data.py`.
 
+## Use it in a controller
+
+```bash
+python export_model.py --download --out models/slip_model.pkl        # detection model
+python export_model.py --download --horizon-ms 50 --out models/warn50.pkl  # early warning
+```
+
+```python
+from reflex_calib.online import SlipPredictor
+s = SlipPredictor.load("models/slip_model.pkl").stream()
+s.reset(baseline)            # median of ~10 pre-contact samples (tare)
+out = s.step(sample)         # sample: 15 raw values mag1_x..mag5_z -> {"p_slip", "trust", "alarm"}
+```
+
+The alarm threshold is tuned on held-out objects to a false-alarm budget (default 2/min). `meta["fa_budget_met"]` says whether it got there. Streaming features match the batch pipeline exactly (`tests/test_online.py`). About 4 ms per step on a laptop, inside a 100 Hz budget.
+
 ## Data
 
 [`pollen-robotics/anyskin_slip_detection`](https://huggingface.co/datasets/pollen-robotics/anyskin_slip_detection) (Apache-2.0) was recorded on a Reachy 2 gripper with one AnySkin (5 magnetometers × 3 axes), across 16 objects. The operator pulled each object up, down, left or right, and labelled slip by hand. Any folder of CSVs with the columns `log_time, mag1_x … mag5_z, slip` works with `--data`.
@@ -47,12 +63,15 @@ reflex_calib/
   adaptive.py     TrustScore (Mahalanobis percentile vs training) and few-shot recalibration
   events.py       event-level alarm metrics
   benchmark.py    the three studies
+  online.py       streaming features + exportable SlipPredictor (used by the reflex controller)
 run_benchmark.py  CLI
+export_model.py   train and save a deployable model
 ```
 
 ## Phase 0 checklist
 
 - [x] Pipeline: loader, features, models, calibrators, shifts, event metrics, plots, tests
+- [x] Real-time predictor: streaming features, exportable model, false-alarm-tuned threshold
 - [ ] **Reproduce** on real AnySkin data: does the GBDT reach about 92% on unseen objects?
 - [ ] **Calibration study**: which objects is the model overconfident on, and why?
 - [ ] **Shift study** on real data: which shifts break calibration, and does 30 s recalibration fix it?
